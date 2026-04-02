@@ -3,6 +3,9 @@
 Connects to the ESP32 camera's /stream endpoint over HTTP and
 displays frames in an OpenCV window. Press 'q' to quit.
 
+The camera is discovered via mDNS hostname (camera-one.local).
+If mDNS resolution fails within 5 seconds, the script exits.
+
 Usage:
     python camera_viewer.py
 
@@ -12,8 +15,19 @@ Requires:
 import cv2
 import urllib.request
 import numpy as np
+import socket
+import sys
 
-STREAM_URL = "http://10.210.38.139/stream"
+CAMERA_HOST = "camera-one.local"
+STREAM_URL = f"http://{CAMERA_HOST}/stream"
+
+print(f"Resolving {CAMERA_HOST}...")
+try:
+    ip = socket.getaddrinfo(CAMERA_HOST, 80, socket.AF_INET, socket.SOCK_STREAM, 0, 0)
+    print(f"Resolved to {ip[0][4][0]}")
+except socket.gaierror:
+    print(f"ERROR: Could not resolve {CAMERA_HOST} — is the camera on this network?")
+    sys.exit(1)
 
 print("Connecting to stream...")
 stream = urllib.request.urlopen(STREAM_URL, timeout=10)

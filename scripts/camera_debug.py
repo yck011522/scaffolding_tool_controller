@@ -17,8 +17,9 @@ import urllib.request
 
 PORT = "COM20"
 BAUD = 115200
-STREAM_URL = "http://10.210.38.139/stream"
-CAPTURE_URL = "http://10.210.38.139/capture"
+CAMERA_HOST = "camera-one.local"
+STREAM_URL = f"http://{CAMERA_HOST}/stream"
+CAPTURE_URL = f"http://{CAMERA_HOST}/capture"
 
 lines = []
 stop_event = threading.Event()

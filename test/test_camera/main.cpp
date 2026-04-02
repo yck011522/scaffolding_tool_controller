@@ -1,5 +1,6 @@
 #include "esp_camera.h"
 #include <WiFi.h>
+#include <ESPmDNS.h>
 
 //
 // WARNING!!! PSRAM IC required for UXGA resolution and high JPEG quality
@@ -21,6 +22,9 @@
 // ===========================
 const char *ssid = "VictorPhone";
 const char *password = "91579150";
+
+// mDNS hostname — reachable as "camera-one.local"
+const char *mdns_hostname = "camera-one";
 
 void startCameraServer();
 void setupLedFlash(int pin);
@@ -126,11 +130,20 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
 
+  if (MDNS.begin(mdns_hostname)) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.printf("mDNS started: http://%s.local\n", mdns_hostname);
+  } else {
+    Serial.println("mDNS failed to start");
+  }
+
   startCameraServer();
 
   Serial.print("Camera Ready! Use 'http://");
   Serial.print(WiFi.localIP());
-  Serial.println("' to connect");
+  Serial.print("' or 'http://");
+  Serial.print(mdns_hostname);
+  Serial.println(".local' to connect");
 }
 
 void loop() {
