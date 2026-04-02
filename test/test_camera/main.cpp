@@ -28,6 +28,11 @@ void setup() {
   Serial.setDebugOutput(true);
   Serial.println();
 
+  // Configure pins to be driven low to prevent motor from moving due to floating inputs. 
+  // These pins are not used by this testing firmware.
+  pinMode(D10, OUTPUT); digitalWrite(D10, LOW);
+  pinMode(D9, OUTPUT); digitalWrite(D9, LOW);
+
   // --- Camera sensor configuration ---
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
