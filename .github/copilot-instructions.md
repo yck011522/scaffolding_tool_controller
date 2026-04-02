@@ -58,7 +58,11 @@ or similar before probing.
 
 ### 4. Verify with a Python script
 
-Write a short Python script (use inline if it is really short `python -c "..."`) that:
+Write a Python script to a file in `scripts/` with a descriptive name
+(e.g. `scripts/verify_camera.py`, `scripts/rs485_roundtrip.py`) and run it
+with `python scripts/<name>.py`.  **Do not use inline `python -c "..."`.**
+
+The script should:
 
 - **Resets the board** via serial RTS toggle if needed:
   ```python
