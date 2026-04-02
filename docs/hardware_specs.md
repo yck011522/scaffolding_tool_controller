@@ -119,8 +119,31 @@ Fallback: INA219 (I2C, shares bus with OLED) — use if pin budget is too tight.
 | Size | 0.66″ |
 | Driver | SSD1306 |
 | Interface | I2C (SDA/SCL) |
-| I2C address | 0x3C (to verify) |
-| Supply voltage | 3.3 V or 5 V (auto-regulated) |
+| I2C address | 0x3C (7-bit) / 0x78 (8-bit, module selector) |
+| Supply voltage | 3.3 V (only) |
+| Wiring | SDA → D4 (GPIO5), SCL → D5 (GPIO6), Grove connector 4 |
+
+### Internal buffer vs visible area
+
+The SSD1306 always has a 128×64 pixel internal framebuffer, but the 0.66″ module only exposes a **64×48 pixel visible window** offset within that buffer. The Adafruit_SSD1306 driver must be initialised with the full 128×64 size, and all drawing coordinates must be shifted to land inside the visible window:
+
+| Parameter | Value |
+|---|---|
+| Framebuffer size | 128 × 64 pixels |
+| Visible window | 64 × 48 pixels |
+| Horizontal offset | 32 pixels (VIS_X = 32) |
+| Vertical offset | 16 pixels (VIS_Y = 16) |
+
+All `setCursor()` calls must use `(VIS_X + col, VIS_Y + row)` to place text within the visible area. Content drawn at (0, 0) will be off-screen to the top-left.
+
+### Text size reference (within 64×48 visible area)
+
+| textSize | Char px | Chars/line | Lines | Legible? | Notes |
+|---|---|---|---|---|---|
+| 1 | 6 × 8 | 10 | 6 | Yes | Smallest usable size, still readable |
+| 2 | 12 × 16 | 5 | 3 | Yes | Good for headers or large readouts |
+| 3 | 18 × 24 | 3 | 2 | Too large | Fills screen, not practical |
+| Mixed 2+1 | — | — | 1 header + 4 body | Yes | Best layout: size 2 title + size 1 details |
 
 ## Buttons
 
