@@ -75,6 +75,18 @@ Additional solder pads: D11, D12 available on top of the camera module.
 | Available gearbox ratios | 6.25, 10, 18.8, 30, 56, 70, 90, 131, 169, 210, 270, 394, 506, 630, 810 |
 | Testing ratios | 4 ratios TBD |
 
+### No-load current by gearbox ratio (bench power supply)
+
+Measured from the 24 V bench power supply with no external mechanical load attached.
+
+| Gearbox ratio | No-load current |
+|---|---|
+| 1:56 | 0.17 A |
+| 1:90 | 0.25 A |
+| 1:131 | 0.25 A |
+| 1:169 | 0.20 A |
+
+Motor can become quite warm after 5 to 10 mins of continuous operation.
 See `docs/motor_spec/` for full datasheet CSV and wiring diagrams.
 
 ### Motor PWM Observations (from DC bench test, 56:1 ratio)
