@@ -1,8 +1,8 @@
-# Copilot Instructions — Scaffolding Tool Controller (XIAO ESP32S3)
+# Copilot Instructions — Scaffolding Tool Controller
 
 ## Project overview
 
-Embedded firmware for a Seeed Studio XIAO ESP32S3 Sense controlling a
+Embedded firmware for a Waveshare ESP32-S3-Tiny controlling a
 scaffolding assembly end-effector on a UR5e robot. The codebase contains
 one main firmware image and many isolated component tests, each in its own
 PlatformIO environment.
@@ -98,12 +98,11 @@ ESP32 firmware that uses WiFi should advertise an mDNS hostname
 addresses. Use `<ESPmDNS.h>` on the ESP32 side and plain
 `socket.getaddrinfo("name.local", 80)` on the Python side.
 
-## Hardware assumptions (XIAO ESP32S3 Sense)
+## Hardware assumptions (Waveshare ESP32-S3-Tiny)
 
-- 8 MB flash, 8 MB PSRAM (always present — no runtime detection needed).
-- OV3660 or OV2640 camera (native JPEG output — no format conversion needed).
-- On-board LED (not a flash) on GPIO 21.
-- Pin definitions are in `camera_pins.h` (XIAO-only, no multi-board ifdefs).
+- ESP32-S3 dual-core LX7, 240 MHz.
+- 18 GPIO pins exposed + TX/RX.
+- No on-board camera — camera is a separate XIAO ESP32S3 Sense module.
 - WiFi connects to the network configured in `main.cpp`.
 - The board is the only hardware variant — remove any multi-board
   conditional compilation from stock examples.

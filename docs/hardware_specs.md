@@ -165,16 +165,6 @@ All `setCursor()` calls must use `(VIS_X + col, VIS_Y + row)` to place text with
 | Encoding | Resistor-ladder voltage divider on single ADC pin |
 | Functions | Motor A tighten, Motor A loosen, Motor B tighten, Motor B loosen |
 
-## Camera
-
-| Parameter | Value |
-|---|---|
-| Sensor | OV3660 |
-| Lens options | 68° FOV, 80° FOV |
-| Cable | 200 mm DVP ribbon (replaces stock camera module) |
-| Streaming | MJPEG over Wi-Fi (ESP32-S3 as access point or STA) |
-| Core assignment | Core 1 (dedicated) |
-
 ## Power
 
 | Rail | Source | Consumers |

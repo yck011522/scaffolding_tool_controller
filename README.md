@@ -1,6 +1,6 @@
-# Scaffolding Tool Controller — XIAO ESP32-S3 Sense
+# Scaffolding Tool Controller
 
-End effector controller for a **UR5e** robotic arm used to assemble scaffolding joints. The controller is built around a **Seeed Studio XIAO ESP32-S3 Sense** mounted on a **Grove Shield** breakout board. Firmware is developed with Arduino framework via **PlatformIO**.
+End effector controller for a **UR5e** robotic arm used to assemble scaffolding joints. The controller is built around a **Waveshare ESP32-S3-Tiny** module. Firmware is developed with Arduino framework via **PlatformIO**.
 
 ## System Overview
 
@@ -14,7 +14,7 @@ The controller sits at the UR5e tool flange and manages the following:
 | **Current Sensing** | INA219 (or INA240) on shared 24 V rail | I2C (INA219) or analog (INA240) | Single sensor monitors total 24 V intake for both motors; current budget ~1–2 A at 24 V |
 | **Manual Override** | 4× momentary push buttons | GPIO digital input | Two per motor (tighten / loosen); active while held; overrides upper-level commands |
 | **Status Display** | 0.66″ SSD1306 OLED | I2C (SDA/SCL via Grove connector) | Shows current state and information to the operator; 3.3 V compatible |
-| **Camera** | OV3660 (replacement module, 200 mm DVP cable) | DVP (on-board connector) | MJPEG streaming over Wi-Fi on demand; 68° or 80° lens options available |
+| **Camera** | *(separate module — see `scaffolding_camera_controller` repo)* | — | Standalone XIAO ESP32-S3 Sense with always-on MJPEG streaming; independent housing and power |
 
 ## Power Architecture
 
@@ -31,7 +31,7 @@ The controller sits at the UR5e tool flange and manages the following:
 3. **Single current sensor** — because only one motor operates at a time, one INA219/INA240 on the shared 24 V rail is sufficient to monitor total current draw.
 4. **Stall detection** — a motor is considered stalled when the interval between consecutive feedback pulses exceeds a configurable timeout, indicating the motor can no longer rotate under load.
 5. **Current limiting** — if measured current approaches the trip threshold, the controller automatically reduces PWM duty cycle. The trip threshold may be set by the upper-level controller per command.
-6. **On-demand video** — camera streaming is activated by command and may run on a dedicated ESP32-S3 core while the other core manages motor control and communication.
+6. **Separate camera module** — camera is a standalone XIAO ESP32-S3 Sense in its own housing (see `scaffolding_camera_controller` repo). Always-on MJPEG streaming, no control interface needed.
 7. **Separate UART for RS-485** — the RS-485 transceiver uses a hardware UART separate from the USB-C port so both can coexist.
 
 ## Repository Structure
@@ -51,8 +51,7 @@ The controller sits at the UR5e tool flange and manages the following:
 │   ├── test_bldc_feedback/     # BLDC motor feedback (pulse counting) test
 │   ├── test_ina_current/       # INA219/INA240 current sensor test
 │   ├── test_oled/              # SSD1306 OLED display test
-│   ├── test_buttons/           # Push button input test
-│   └── test_camera/            # OV3660 camera MJPEG streaming test
+│   └── test_buttons/           # Push button input test
 └── scripts/                    # Helper scripts (e.g., ROS-side test nodes)
 ```
 

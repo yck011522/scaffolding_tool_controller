@@ -1,4 +1,4 @@
-// Scaffolding Tool Controller — XIAO ESP32-S3 Sense
+// Scaffolding Tool Controller
 // Integrated firmware (placeholder)
 //
 // Individual component tests live under test/ and are built
