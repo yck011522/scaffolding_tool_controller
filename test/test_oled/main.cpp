@@ -1,5 +1,7 @@
 // OLED display text-size test.
 //
+// Board: Waveshare ESP32-S3-Tiny
+//
 // Cycles through different text sizes on a 0.66" SSD1306 (64x48) OLED
 // so the user can visually judge which sizes are legible.
 //
@@ -7,14 +9,12 @@
 // The cycle repeats forever.
 //
 // Wiring:
-//   SDA → I2C SDA pin (GPIO TBD for Waveshare ESP32-S3-Tiny)
-//   SCL → I2C SCL pin (GPIO TBD for Waveshare ESP32-S3-Tiny)
+//   SDA → GPIO15
+//   SCL → GPIO16
 //   VCC → 3.3 V
 //   GND → GND
 //
 // Module address selector set to 0x78 (8-bit) = 0x3C (7-bit).
-// Note: I2C pin assignments (D4/D5) are from XIAO testing and will need
-// updating once the Waveshare pin map is finalised.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -24,21 +24,35 @@
 // Display dimensions — 128x64 internal buffer, but the 0.66" module only
 // shows a 64x48 pixel visible window at offset (32, 16) in the buffer.
 // The driver must be initialised with the full 128x64 size.
-#define SCREEN_WIDTH  128
+#define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
 // Visible area offset — all drawing must start from here
 #define VIS_X 32
 #define VIS_Y 16
-#define VIS_W 64    // visible width in pixels
-#define VIS_H 48    // visible height in pixels
+#define VIS_W 64 // visible width in pixels
+#define VIS_H 48 // visible height in pixels
 
 // 7-bit I2C address (module selector at 0x78 → 0x3C in Arduino Wire)
 #define OLED_ADDR 0x3C
 
-// I2C pins (from XIAO testing — update needed for Waveshare board)
-#define I2C_SDA D4   // GPIO5
-#define I2C_SCL D5   // GPIO6
+// I2C pins (Waveshare ESP32-S3-Tiny)
+#define I2C_SDA 15 // GPIO15
+#define I2C_SCL 16 // GPIO16
+
+// Other system pins — set to high-Z in setup()
+const int PIN_BTN1 = 1;
+const int PIN_BTN2 = 2;
+const int PIN_BTN3 = 3;
+const int PIN_BTN4 = 4;
+const int PIN_M1_DIR = 5;
+const int PIN_M1_PWM = 6;
+const int PIN_M1_CAP = 7;
+const int PIN_M2_DIR = 9;
+const int PIN_M2_PWM = 10;
+const int PIN_M2_CAP = 11;
+const int PIN_INA_OUT = 13;
+const int PIN_DE_RE = 18;
 
 // Time each test page is displayed (milliseconds)
 #define PAGE_DURATION 5000
@@ -49,7 +63,8 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 // --- Page drawing functions ---
 
 // Page 1: textSize(1) — 6x8 px per char → 10 chars × 6 lines visible
-void page1() {
+void page1()
+{
   display.setTextSize(1);
   display.setCursor(VIS_X, VIS_Y);
   display.println("SIZE 1 6x8");
@@ -67,7 +82,8 @@ void page1() {
 }
 
 // Page 2: textSize(2) — 12x16 px per char → 5 chars × 3 lines visible
-void page2() {
+void page2()
+{
   display.setTextSize(2);
   display.setCursor(VIS_X, VIS_Y);
   display.println("SZ 2");
@@ -79,7 +95,8 @@ void page2() {
 }
 
 // Page 3: mixed sizes — size 2 header + size 1 body
-void page3() {
+void page3()
+{
   display.setTextSize(2);
   display.setCursor(VIS_X, VIS_Y);
   display.println("MOTOR");
@@ -96,7 +113,8 @@ void page3() {
 }
 
 // Page 4: size 1, realistic status display
-void page4() {
+void page4()
+{
   display.setTextSize(1);
   display.setCursor(VIS_X, VIS_Y);
   display.println("= STATUS =");
@@ -114,7 +132,8 @@ void page4() {
 }
 
 // Page 5: size 1, max fill — all 60 character slots
-void page5() {
+void page5()
+{
   display.setTextSize(1);
   display.setCursor(VIS_X, VIS_Y);
   display.print("ABCDEFGHIJ");
@@ -132,7 +151,8 @@ void page5() {
 }
 
 // Page 6: textSize(3) — 18x24 px per char → 3 chars × 2 lines visible
-void page6() {
+void page6()
+{
   display.setTextSize(3);
   display.setCursor(VIS_X, VIS_Y);
   display.println("CW");
@@ -142,7 +162,8 @@ void page6() {
 }
 
 // Page 7: size 2 numbers — for large readouts
-void page7() {
+void page7()
+{
   display.setTextSize(2);
   display.setCursor(VIS_X, VIS_Y);
   display.println("1.2A");
@@ -159,33 +180,50 @@ void page7() {
 }
 
 typedef void (*PageFunc)();
-PageFunc pages[] = { page1, page2, page3, page4, page5, page6, page7 };
+PageFunc pages[] = {page1, page2, page3, page4, page5, page6, page7};
 const int NUM_PAGES = sizeof(pages) / sizeof(pages[0]);
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(500);
   Serial.println();
   Serial.println("[OLED] Starting OLED text-size test");
 
-  // Configure unused motor-driver pins as low outputs
-  pinMode(D10, OUTPUT); digitalWrite(D10, LOW);
-  pinMode(D9, OUTPUT);  digitalWrite(D9, LOW);
+  // ── Set all non-tested pins to high-Z (INPUT) ──────────────────────
+  pinMode(PIN_BTN1, INPUT);
+  pinMode(PIN_BTN2, INPUT);
+  pinMode(PIN_BTN3, INPUT);
+  pinMode(PIN_BTN4, INPUT);
+  pinMode(PIN_M1_DIR, INPUT);
+  pinMode(PIN_M1_PWM, INPUT);
+  pinMode(PIN_M1_CAP, INPUT);
+  pinMode(PIN_M2_DIR, INPUT);
+  pinMode(PIN_M2_PWM, INPUT);
+  pinMode(PIN_M2_CAP, INPUT);
+  pinMode(PIN_INA_OUT, INPUT);
+  pinMode(PIN_DE_RE, INPUT);
 
   // Initialise I2C on the correct pins
   Wire.begin(I2C_SDA, I2C_SCL);
 
   // Initialise the SSD1306 display
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
+  {
     Serial.println("[OLED] SSD1306 init failed!");
-    while (true) { delay(1000); }
+    while (true)
+    {
+      delay(1000);
+    }
   }
   Serial.println("[OLED] SSD1306 init OK");
   Serial.printf("[OLED] Screen: %dx%d, %d pages, %d ms each\n", SCREEN_WIDTH, SCREEN_HEIGHT, NUM_PAGES, PAGE_DURATION);
 }
 
-void loop() {
-  for (int i = 0; i < NUM_PAGES; i++) {
+void loop()
+{
+  for (int i = 0; i < NUM_PAGES; i++)
+  {
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
     Serial.printf("[OLED] Showing page %d/%d\n", i + 1, NUM_PAGES);

@@ -8,8 +8,8 @@ Ground-truth reference for component choices, voltage levels, and interface deta
 |---|---|
 | Board | Waveshare ESP32-S3-Tiny |
 | MCU | ESP32-S3 (dual-core Xtensa LX7, 240 MHz) |
-| Flash | TBD (check module datasheet) |
-| PSRAM | TBD (check module datasheet) |
+| Flash | 4 MB (ESP32-S3FH4R2) |
+| PSRAM | 2 MB (ESP32-S3FH4R2) |
 | GPIO voltage | 3.3 V |
 | ADC | 12-bit, ADC1 channels (ADC2 conflicts with Wi-Fi) |
 | GPIO count | 18 exposed + TX/RX |
@@ -44,8 +44,24 @@ The ESP32-S3 uses its **native USB peripheral** for Serial (no separate UART chi
 
 ### Pin Map
 
-TBD — to be populated once the Waveshare ESP32-S3-Tiny datasheet is reviewed.
-18 GPIO pins + TX/RX are exposed. Pin-to-GPIO mapping and ADC channel assignments need verification.
+| GPIO | Function | Direction | Notes |
+|------|----------|-----------|-------|
+| 1 | Button 1 | Input (pull-up) | Momentary switch, active LOW |
+| 2 | Button 2 | Input (pull-up) | Momentary switch, active LOW |
+| 3 | Button 3 | Input (pull-up) | Momentary switch, active LOW |
+| 4 | Button 4 | Input (pull-up) | Momentary switch, active LOW |
+| 5 | Motor 1 DIR (gripper) | Output | Direction control |
+| 6 | Motor 1 PWM (gripper) | Output | Speed control (LEDC) + 4.7kΩ pull-down |
+| 7 | Motor 1 CAP (gripper) | Input | Encoder feedback via voltage divider (5V→3.3V) |
+| 9 | Motor 2 DIR (tightening) | Output | Direction control |
+| 10 | Motor 2 PWM (tightening) | Output | Speed control (LEDC) + 4.7kΩ pull-down |
+| 11 | Motor 2 CAP (tightening) | Input | Encoder feedback via voltage divider (5V→3.3V) |
+| 13 | INA240 current sense | Input (ADC) | Analog current measurement |
+| 15 | I2C SDA | Bidir | OLED display |
+| 16 | I2C SCL | Output | OLED display |
+| 18 | RS-485 DE/RE | Output | MAX3485 direction control |
+| 43 | RS-485 TX (board header) | Output | MAX3485 DI (driver input) |
+| 44 | RS-485 RX (board header) | Input | MAX3485 RO (receiver output) |
 
 ## BLDC Motor — JGB37-3650-2480
 
@@ -92,12 +108,12 @@ See `docs/motor_spec/` for full datasheet CSV and wiring diagrams.
 | Chip | MAX3485 |
 | Supply voltage | 3.3 V |
 | Interface | UART TX/RX + DE/RE direction control |
-| TX pin | D6 (GPIO43) → MAX3485 DI (RDX on Module PCB)|
-| RX pin | D7 (GPIO44) → MAX3485 RO (TDX on Module PCB)|
-| DE/RE pin | D0 (GPIO1) → MAX3485 DE + ~RE (tied together) |
+| TX pin | GPIO43 (board TX header) → MAX3485 DI (RDX on Module PCB)|
+| RX pin | GPIO44 (board RX header) → MAX3485 RO (TDX on Module PCB)|
+| DE/RE pin | GPIO18 → MAX3485 DE + ~RE (tied together) |
 | Baud rate | 115200 (default) |
 
-> **Label confusion:** Many MAX3485 breakout modules label the pins "TXD" and "RXD" from the module's perspective. "TXD" on the module is the receiver output (RO) — connect it to the MCU's **RX** pin (D7). "RXD" on the module is the driver input (DI) — connect it to the MCU's **TX** pin (D6). In short: module TXD → MCU RX, module RXD → MCU TX.
+> **Label confusion:** Many MAX3485 breakout modules label the pins "TXD" and "RXD" from the module's perspective. "TXD" on the module is the receiver output (RO) — connect it to the MCU's **RX** pin (GPIO44). "RXD" on the module is the driver input (DI) — connect it to the MCU's **TX** pin (GPIO43). In short: module TXD → MCU RX, module RXD → MCU TX.
 
 ## Current Sensor — INA240 (preferred)
 
@@ -107,7 +123,7 @@ See `docs/motor_spec/` for full datasheet CSV and wiring diagrams.
 | Output | Analog voltage (read with ESP32 ADC) |
 | Common-mode range | Up to 80 V (suitable for 24 V rail) |
 | Gain variants | A1 (×20), A2 (×50), A3 (×100), A4 (×200) — TBD which variant |
-| ADC pin | TBD |
+| ADC pin | GPIO13 |
 
 Fallback: INA219 (I2C, shares bus with OLED) — use if pin budget is too tight.
 
@@ -120,7 +136,7 @@ Fallback: INA219 (I2C, shares bus with OLED) — use if pin budget is too tight.
 | Interface | I2C (SDA/SCL) |
 | I2C address | 0x3C (7-bit) / 0x78 (8-bit, module selector) |
 | Supply voltage | 3.3 V (only) |
-| Wiring | SDA → TBD, SCL → TBD (pin assignment pending new board pin map) |
+| Wiring | SDA → GPIO15, SCL → GPIO16 |
 
 ### Internal buffer vs visible area
 
@@ -149,7 +165,8 @@ All `setCursor()` calls must use `(VIS_X + col, VIS_Y + row)` to place text with
 | Parameter | Value |
 |---|---|
 | Count | 4 momentary push buttons |
-| Encoding | Resistor-ladder voltage divider on single ADC pin |
+| Encoding | Individual GPIO pins with internal pull-up resistors, active LOW |
+| Pins | GPIO1, GPIO2, GPIO3, GPIO4 |
 | Functions | Motor A tighten, Motor A loosen, Motor B tighten, Motor B loosen |
 
 ## Power

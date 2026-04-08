@@ -8,13 +8,13 @@ Each test folder under `test/` contains its own firmware and should save test re
 
 | # | Test | Status | Depends on | Notes |
 |---|---|---|---|---|
-| 1 | `test_bldc_pwm` — PWM drive + direction control | Not started | — | Test all 4 gearbox ratios. Verify 3.3 V PWM accepted by driver. |
-| 2 | `test_bldc_feedback` — Pulse counting + RPM | Not started | #1 | Sweep PWM duty cycles, log RPM vs duty. Find dead band. Needs 5 V → 3.3 V divider on CAP pin. |
-| 3 | `test_ina_current` — INA240 current reading | Not started | #1 | Read analog output while motor runs at known duty cycles. Cross-check with external multimeter. |
-| 4 | `test_rs485` — Echo / loopback with USB adapter | Not started | — | USB-C serial for commands, RS-485 for data path. Test both directions. |
-| 5 | `test_oled` — SSD1306 display | Not started | — | I2C, verify address 0x3C. Display static text. |
-| 6 | `test_buttons` — Resistor-ladder ADC read | Not started | — | Single ADC pin, 4 buttons. Verify voltage levels for each combination. |
-| 7 | `test_camera` — OV3660 MJPEG over Wi-Fi | Not started | — | Dual-core: camera on Core 1. Test with browser and OpenCV client. |
+| 1 | `test_bldc_pwm` — PWM drive + direction control | Tested on XIAO, not yet on S3-Tiny | — | Test all 4 gearbox ratios. Verify 3.3 V PWM accepted by driver. Pins updated for Motor 1 (GPIO5/6). |
+| 2 | `test_bldc_feedback` — Pulse counting + RPM | Tested on XIAO, not yet on S3-Tiny | #1 | Sweep PWM duty cycles, log RPM vs duty. Find dead band. Needs 5 V → 3.3 V divider on CAP pin (GPIO7). |
+| 3 | `test_ina_current` — INA240 current reading | Tested on XIAO, not yet on S3-Tiny | #1 | Read analog output (GPIO13) while motor runs at known duty cycles. Cross-check with external multimeter. |
+| 4 | `test_rs485` — Echo / loopback with USB adapter | Tested on XIAO, not yet on S3-Tiny | — | USB-C serial for commands, RS-485 via GPIO43/44 TX/RX + GPIO18 DE/RE. Test both directions. |
+| 5 | `test_oled` — SSD1306 display | Tested on XIAO, not yet on S3-Tiny | — | I2C on GPIO15/16, verify address 0x3C. Display static text. |
+| 6 | `test_buttons` — Individual GPIO button read | Not started | — | 4 buttons on GPIO1-4, internal pull-up, active LOW. Verify press/release detection. |
+| 7 | ~~`test_camera` — OV3660 MJPEG over Wi-Fi~~ | Removed | — | Camera is on a separate XIAO ESP32S3 Sense module, not on this board. |
 | 8 | Motor control loop integration | Not started | #1–3 | PWM + feedback + INA current limiting + stall detection. |
 | 9 | RS-485 command interface | Not started | #4, #8 | Parse commands from both USB-C and RS-485. Reply on originating port (or both). |
 | 10 | Button overrides + OLED status | Not started | #6, #5, #8 | Buttons preempt RS-485 commands. OLED shows live state. |
