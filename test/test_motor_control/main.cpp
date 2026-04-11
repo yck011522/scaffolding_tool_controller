@@ -38,8 +38,14 @@
 //   LIMIT M1 L <mA> Set motor 1 loosen limit
 //   LIMIT M2 T <mA> Set motor 2 tighten limit
 //   LIMIT M2 L <mA> Set motor 2 loosen limit
+//   KP <val>        Set proportional gain
+//   KI <val>        Set integral gain
+//   SLEW T <val>    Set tighten slew rate
+//   SLEW L <val>    Set loosen slew rate
+//   RAMP <ms>       Set ramp duration
 //   RATIO <n>       Set gearbox ratio for RPM display (default: 56)
 //   LOG             Toggle periodic logging (every 200 ms)
+//   FAST            Toggle high-speed logging (every control cycle)
 //
 // Wiring:
 //   Motor 1: PWM=GPIO6, DIR=GPIO5, CAP=GPIO7  (gripper)
@@ -136,14 +142,12 @@ float motorLimitMa[2][2] = {
 float currentLimitMa = 300.0;         // active limit (set on motor start)
 const int PWM_MIN = 102;             // ~40% of 255 — dead band edge
 const int PWM_MAX = 255;             // 100%
-const int PWM_START = 255;           // start at full PWM; PI pulls back near limit
-const float KP_CURRENT = 1.0;         // proportional gain: PWM counts per mA error
-const float KI_CURRENT = 0.1;        // integral gain
-const float INTEGRAL_MAX = 100.0;    // anti-windup clamp
+float kpCurrent = 0.0;               // proportional gain — velocity form (tunable via serial)
+float kiCurrent = 1.0;               // integral gain — velocity form (tunable via serial)
 const unsigned long CONTROL_INTERVAL_MS = 10; // 100 Hz control loop
-const unsigned long RAMP_DURATION_MS = 300;   // soft-start ramp from PWM_MIN to PWM_MAX
-const int SLEW_TIGHTEN = 15;          // smooth tightening — no vibration
-const int SLEW_LOOSEN = 500;          // aggressive loosening — impact-driver effect
+unsigned long rampDurationMs = 300;   // soft-start ramp from PWM_MIN to PWM_MAX
+int slewTighten = 15;                 // smooth tightening — no vibration
+int slewLoosen = 500;                 // aggressive loosening — impact-driver effect
 
 // ── Button debounce ─────────────────────────────────────────────────
 const int NUM_BUTTONS = 4;
@@ -181,7 +185,8 @@ struct Motor
     MotorAction action;
     int pwmValue;            // current LEDC duty (0–255)
     float motorRpm;
-    float integralError;
+    float integralError;     // accumulated error*dt (diagnostic only)
+    float prevError;          // previous error for velocity-form PI
 
     // RPM measurement
     unsigned long lastRpmTime;
@@ -203,6 +208,7 @@ int activeMotor = -1;
 
 // ── Logging ─────────────────────────────────────────────────────────
 bool logEnabled = false;
+bool fastLogEnabled = false;   // per-control-cycle logging
 unsigned long lastLogTime = 0;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -327,6 +333,7 @@ void startMotor(int motorIdx, MotorAction action)
 
     // Reset control state
     m.integralError = 0.0;
+    m.prevError = 0.0;
     m.lastControlTime = millis();
     m.runStartTime = millis();
     m.stallStartTime = 0;
@@ -339,16 +346,17 @@ void startMotor(int motorIdx, MotorAction action)
     m.lastPulseTime = millis();
     m.motorRpm = 0.0;
 
-    // Start PWM
-    setMotorPWM(m, PWM_START);
+    // Start PWM at dead-band edge — ramp brings it up
+    setMotorPWM(m, PWM_MIN);
 
     m.state = STATE_RUNNING;
     m.action = action;
     activeMotor = motorIdx;
 
-    Serial.printf("[M%d] %s — starting at PWM %d%%, limit %d mA\n",
+    Serial.printf("[M%d] %s \u2014 starting at PWM %d%%, limit %d mA (Kp=%.2f Ki=%.3f)\n",
                   motorIdx + 1, actionStr(action),
-                  (int)(PWM_START * 100 / 255), (int)currentLimitMa);
+                  (int)(PWM_MIN * 100 / 255), (int)currentLimitMa,
+                  kpCurrent, kiCurrent);
 }
 
 void stopAllMotors()
@@ -424,26 +432,21 @@ void controlLoop(int motorIdx)
         }
     }
 
-    // ── Current-limiting PI controller ──────────────────────────────
-    // Error is positive when current is below limit (room to increase PWM)
-    // Error is negative when current exceeds limit (must decrease PWM)
+    // ── Velocity-form PI controller ──────────────────────────────────
+    // Error: positive = below limit (increase PWM), negative = above (decrease)
     float error = currentLimitMa - currentMa;
+    float deltaError = error - m.prevError;
+    m.prevError = error;
+    float dt = CONTROL_INTERVAL_MS / 1000.0;
 
-    // Conditional integration (anti-windup):
-    // - Do NOT integrate positive error if PWM is already at max
-    //   (no-load case: motor can't draw more current, don't wind up)
-    // - Always integrate negative error (over-limit: must reduce fast)
-    if (error < 0 || m.pwmValue < PWM_MAX)
-    {
-        m.integralError += error * (CONTROL_INTERVAL_MS / 1000.0);
-    }
-    // Clamp integral: only clamp the positive side; negative is unclamped
-    // so the controller can reduce PWM aggressively when over-limit
-    if (m.integralError > INTEGRAL_MAX) m.integralError = INTEGRAL_MAX;
+    // Velocity form: incremental PWM change each cycle
+    // Kp reacts to change in error (damping); Ki drives toward setpoint
+    float deltaPWM = kpCurrent * deltaError + kiCurrent * error * dt;
 
-    float adjustment = KP_CURRENT * error + KI_CURRENT * m.integralError;
+    int newPWM = m.pwmValue + (int)deltaPWM;
 
-    int newPWM = PWM_START + (int)adjustment;
+    // Track accumulated error for diagnostic logging
+    m.integralError += error * dt;
 
     // Never go below dead-band edge — motor would stop and fake a stall
     if (newPWM < PWM_MIN) newPWM = PWM_MIN;
@@ -451,19 +454,26 @@ void controlLoop(int motorIdx)
 
     // Soft-start ramp ceiling — linearly increase max allowed PWM
     unsigned long elapsed = now - m.runStartTime;
-    if (elapsed < RAMP_DURATION_MS) {
-        int rampCeiling = PWM_MIN + (int)((long)(PWM_MAX - PWM_MIN) * elapsed / RAMP_DURATION_MS);
+    if (elapsed < rampDurationMs) {
+        int rampCeiling = PWM_MIN + (int)((long)(PWM_MAX - PWM_MIN) * elapsed / rampDurationMs);
         if (newPWM > rampCeiling) newPWM = rampCeiling;
     }
 
     // Slew rate limit — cap how fast PWM can change per cycle
-    int slewMax = (m.action == ACTION_TIGHTEN) ? SLEW_TIGHTEN : SLEW_LOOSEN;
+    int slewMax = (m.action == ACTION_TIGHTEN) ? slewTighten : slewLoosen;
     int delta = newPWM - m.pwmValue;
     if (delta > slewMax)  newPWM = m.pwmValue + slewMax;
     if (delta < -slewMax) newPWM = m.pwmValue - slewMax;
     if (newPWM < PWM_MIN) newPWM = PWM_MIN;
 
     setMotorPWM(m, newPWM);
+
+    // High-speed log: every control cycle
+    if (fastLogEnabled) {
+        Serial.printf("FAST,%lu,%d,%.1f,%d,%.0f,%.1f\n",
+                      now, activeMotor + 1, currentMa,
+                      m.pwmValue, m.motorRpm, m.integralError);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -634,6 +644,50 @@ void processCommand(const String &raw)
         logEnabled = !logEnabled;
         Serial.printf("Periodic logging: %s\n", logEnabled ? "ON (200ms)" : "OFF");
     }
+    else if (upper == "FAST")
+    {
+        fastLogEnabled = !fastLogEnabled;
+        if (fastLogEnabled)
+            Serial.println("FAST_START,time_ms,motor,current_mA,pwm,rpm,integral");
+        else
+            Serial.println("FAST_STOP");
+    }
+    else if (upper.startsWith("KP "))
+    {
+        float v = cmd.substring(3).toFloat();
+        if (v >= 0 && v <= 100) {
+            kpCurrent = v;
+            Serial.printf("[CFG] Kp set to %.3f\n", kpCurrent);
+        }
+    }
+    else if (upper.startsWith("KI "))
+    {
+        float v = cmd.substring(3).toFloat();
+        if (v >= 0 && v <= 100) {
+            kiCurrent = v;
+            Serial.printf("[CFG] Ki set to %.4f\n", kiCurrent);
+        }
+    }
+    else if (upper.startsWith("SLEW "))
+    {
+        String arg = upper.substring(5);
+        arg.trim();
+        if (arg.startsWith("T ")) {
+            int v = arg.substring(2).toInt();
+            if (v > 0) { slewTighten = v; Serial.printf("[CFG] Slew tighten = %d\n", v); }
+        } else if (arg.startsWith("L ")) {
+            int v = arg.substring(2).toInt();
+            if (v > 0) { slewLoosen = v; Serial.printf("[CFG] Slew loosen = %d\n", v); }
+        }
+    }
+    else if (upper.startsWith("RAMP "))
+    {
+        int v = cmd.substring(5).toInt();
+        if (v >= 0 && v <= 5000) {
+            rampDurationMs = v;
+            Serial.printf("[CFG] Ramp duration = %d ms\n", v);
+        }
+    }
     else if (upper == "STATUS")
     {
         printStatus();
@@ -641,7 +695,9 @@ void processCommand(const String &raw)
     else
     {
         Serial.println("Commands: M1 TIGHTEN, M1 LOOSEN, M2 TIGHTEN, M2 LOOSEN");
-        Serial.println("  STOP, STATUS, LIMIT [M1|M2] [T|L] <mA>, RATIO <n>, LOG");
+        Serial.println("  STOP, STATUS, LOG, FAST");
+        Serial.println("  LIMIT [M1|M2] [T|L] <mA>, RATIO <n>");
+        Serial.println("  KP <val>, KI <val>, SLEW T|L <val>, RAMP <ms>");
     }
 }
 
@@ -654,7 +710,8 @@ void printStatus()
     Serial.println("════════════════════════════════════════");
     Serial.printf("  M1: T=%.0f mA  L=%.0f mA\n", motorLimitMa[0][0], motorLimitMa[0][1]);
     Serial.printf("  M2: T=%.0f mA  L=%.0f mA\n", motorLimitMa[1][0], motorLimitMa[1][1]);
-    Serial.printf("  Active limit:  %.0f mA\n", currentLimitMa);
+    Serial.printf("  Kp=%.3f  Ki=%.4f  (velocity form)\n", kpCurrent, kiCurrent);
+    Serial.printf("  Slew: T=%d L=%d  Ramp=%lu ms\n", slewTighten, slewLoosen, rampDurationMs);
     Serial.printf("  Measured current: %.1f mA\n", currentMa);
     Serial.printf("  Gear ratio: %.1f\n", gearRatio);
     Serial.printf("  Active motor: %s\n",
@@ -894,10 +951,14 @@ void setup()
     }
 
     Serial.println("Commands: M1 TIGHTEN, M1 LOOSEN, M2 TIGHTEN, M2 LOOSEN");
-    Serial.println("  STOP, STATUS, LIMIT [M1|M2] [T|L] <mA>, RATIO <n>, LOG");
-    Serial.printf("M1: T=%.0f L=%.0f | M2: T=%.0f L=%.0f | Ratio: %.1f\n\n",
+    Serial.println("  STOP, STATUS, LOG, FAST");
+    Serial.println("  LIMIT [M1|M2] [T|L] <mA>, RATIO <n>");
+    Serial.println("  KP <val>, KI <val>, SLEW T|L <val>, RAMP <ms>");
+    Serial.printf("M1: T=%.0f L=%.0f | M2: T=%.0f L=%.0f | Ratio: %.1f\n",
                   motorLimitMa[0][0], motorLimitMa[0][1],
                   motorLimitMa[1][0], motorLimitMa[1][1], gearRatio);
+    Serial.printf("Kp=%.3f Ki=%.4f Slew T=%d L=%d Ramp=%lu ms\n\n",
+                  kpCurrent, kiCurrent, slewTighten, slewLoosen, rampDurationMs);
 }
 
 // ═══════════════════════════════════════════════════════════════════
