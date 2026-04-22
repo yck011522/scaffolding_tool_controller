@@ -158,7 +158,6 @@ These commands are accepted only on the USB serial interface and are
 | `KI <val>` | Set integral gain |
 | `SLEW T\|L <val>` | Set slew rate |
 | `RAMP <ms>` | Set ramp duration |
-| `RATIO <n>` | Set gearbox ratio for RPM display |
 
 ## Future Considerations
 
