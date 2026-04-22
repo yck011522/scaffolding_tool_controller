@@ -43,7 +43,6 @@
 //   SLEW T <val>    Set tighten slew rate
 //   SLEW L <val>    Set loosen slew rate
 //   RAMP <ms>       Set ramp duration
-//   RATIO <n>       Set gearbox ratio for RPM display (default: 56)
 //   LOG             Toggle periodic logging (every 200 ms)
 //   FAST            Toggle high-speed logging (every control cycle)
 //
@@ -117,7 +116,9 @@ float currentOffsetMa = 0.0;
 
 // ── Motor feedback ──────────────────────────────────────────────────
 const int PULSES_PER_REV = 6;
-float gearRatio = 56.0;
+
+// Compile-time gearbox ratios [motor 1, motor 2]
+const float MOTOR_GEAR_RATIO[2] = {56.0f, 56.0f};
 
 // Motor 1 pulse counter
 volatile unsigned long m1PulseCount = 0;
@@ -630,15 +631,6 @@ void processCommand(const String &raw)
             Serial.println("[ERR] LIMIT must be 50-1500 mA");
         }
     }
-    else if (upper.startsWith("RATIO "))
-    {
-        float v = cmd.substring(6).toFloat();
-        if (v > 0)
-        {
-            gearRatio = v;
-            Serial.printf("[CFG] Gear ratio set to %.1f\n", gearRatio);
-        }
-    }
     else if (upper == "LOG")
     {
         logEnabled = !logEnabled;
@@ -696,7 +688,7 @@ void processCommand(const String &raw)
     {
         Serial.println("Commands: M1 TIGHTEN, M1 LOOSEN, M2 TIGHTEN, M2 LOOSEN");
         Serial.println("  STOP, STATUS, LOG, FAST");
-        Serial.println("  LIMIT [M1|M2] [T|L] <mA>, RATIO <n>");
+        Serial.println("  LIMIT [M1|M2] [T|L] <mA>");
         Serial.println("  KP <val>, KI <val>, SLEW T|L <val>, RAMP <ms>");
     }
 }
@@ -713,14 +705,14 @@ void printStatus()
     Serial.printf("  Kp=%.3f  Ki=%.4f  (velocity form)\n", kpCurrent, kiCurrent);
     Serial.printf("  Slew: T=%d L=%d  Ramp=%lu ms\n", slewTighten, slewLoosen, rampDurationMs);
     Serial.printf("  Measured current: %.1f mA\n", currentMa);
-    Serial.printf("  Gear ratio: %.1f\n", gearRatio);
+    Serial.printf("  Gear ratio: M1=%.1f  M2=%.1f\n", MOTOR_GEAR_RATIO[0], MOTOR_GEAR_RATIO[1]);
     Serial.printf("  Active motor: %s\n",
                   activeMotor >= 0 ? String("M" + String(activeMotor + 1)).c_str() : "none");
     for (int i = 0; i < 2; i++)
     {
         Motor &m = motors[i];
         updateMotorRpm(m);
-        float shaftRpm = m.motorRpm / gearRatio;
+        float shaftRpm = m.motorRpm / MOTOR_GEAR_RATIO[i];
         Serial.printf("  M%d: %-8s %-8s  PWM=%3d (%2d%%)  RPM=%.0f (shaft %.1f)\n",
                       i + 1, stateStr(m.state), actionStr(m.action),
                       m.pwmValue, (int)(m.pwmValue * 100 / 255),
@@ -813,7 +805,7 @@ void updateDisplay()
         oled.printf("PWM: %d%%", m.pwmValue * 100 / 255);
 
         // ── Row 6: RPM + elapsed time (y=49) ──
-        float shaftRpm = m.motorRpm / gearRatio;
+        float shaftRpm = m.motorRpm / MOTOR_GEAR_RATIO[dm];
         float elapsed = (now - m.runStartTime) / 1000.0f;
         oled.setCursor(0, 49);
         oled.printf("RPM:%.1f  t:%.1fs", shaftRpm, elapsed);
@@ -833,7 +825,7 @@ void updateDisplay()
         oled.setCursor(0, 34);
         oled.printf("M2: T=%.0f L=%.0f", motorLimitMa[1][0], motorLimitMa[1][1]);
         oled.setCursor(0, 48);
-        oled.printf("Ratio: %.0f:1", gearRatio);
+        oled.printf("R M1:%.0f M2:%.0f", MOTOR_GEAR_RATIO[0], MOTOR_GEAR_RATIO[1]);
     }
 
     oled.display();
@@ -952,11 +944,12 @@ void setup()
 
     Serial.println("Commands: M1 TIGHTEN, M1 LOOSEN, M2 TIGHTEN, M2 LOOSEN");
     Serial.println("  STOP, STATUS, LOG, FAST");
-    Serial.println("  LIMIT [M1|M2] [T|L] <mA>, RATIO <n>");
+    Serial.println("  LIMIT [M1|M2] [T|L] <mA>");
     Serial.println("  KP <val>, KI <val>, SLEW T|L <val>, RAMP <ms>");
-    Serial.printf("M1: T=%.0f L=%.0f | M2: T=%.0f L=%.0f | Ratio: %.1f\n",
+    Serial.printf("M1: T=%.0f L=%.0f | M2: T=%.0f L=%.0f | Ratio M1: %.1f M2: %.1f\n",
                   motorLimitMa[0][0], motorLimitMa[0][1],
-                  motorLimitMa[1][0], motorLimitMa[1][1], gearRatio);
+                  motorLimitMa[1][0], motorLimitMa[1][1],
+                  MOTOR_GEAR_RATIO[0], MOTOR_GEAR_RATIO[1]);
     Serial.printf("Kp=%.3f Ki=%.4f Slew T=%d L=%d Ramp=%lu ms\n\n",
                   kpCurrent, kiCurrent, slewTighten, slewLoosen, rampDurationMs);
 }
