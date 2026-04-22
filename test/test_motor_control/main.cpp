@@ -143,10 +143,16 @@ float motorLimitMa[2][2] = {
 float currentLimitMa = 300.0;         // active limit (set on motor start)
 const int PWM_MIN = 102;             // ~40% of 255 — dead band edge
 const int PWM_MAX = 255;             // 100%
+const int PWM_START_LOOSEN_M1 = 155; // startup kick for M1 loosen action
+const int PWM_START_LOOSEN_M2 = 155; // startup kick for M2 loosen action
+const int PWM_MAX_M1_TIGHTEN = 180;  // max output PWM for M1 tighten - avoid sudden current spike shwn tightening
+const int PWM_MAX_M1_LOOSEN = 180;   // max output PWM for M1 loosen
+const int PWM_MAX_M2_TIGHTEN = 180;  // max output PWM for M2 tighten
+const int PWM_MAX_M2_LOOSEN = 180;   // max output PWM for M2 loosen
 float kpCurrent = 0.0;               // proportional gain — velocity form (tunable via serial)
 float kiCurrent = 1.0;               // integral gain — velocity form (tunable via serial)
 const unsigned long CONTROL_INTERVAL_MS = 10; // 100 Hz control loop
-unsigned long rampDurationMs = 300;   // soft-start ramp from PWM_MIN to PWM_MAX
+unsigned long rampDurationMs = 300;   // soft-start ramp from startup PWM to configured max PWM
 int slewTighten = 15;                 // smooth tightening — no vibration
 int slewLoosen = 500;                 // aggressive loosening — impact-driver effect
 
@@ -173,6 +179,26 @@ enum MotorAction
     ACTION_TIGHTEN,
     ACTION_LOOSEN
 };
+
+int startPwmForAction(int motorIdx, MotorAction action)
+{
+    if (action == ACTION_LOOSEN)
+        return (motorIdx == 0) ? PWM_START_LOOSEN_M1 : PWM_START_LOOSEN_M2;
+    return PWM_MIN;
+}
+
+int maxPwmForAction(int motorIdx, MotorAction action)
+{
+    int pwmMax = PWM_MAX;
+    if (motorIdx == 0)
+        pwmMax = (action == ACTION_TIGHTEN) ? PWM_MAX_M1_TIGHTEN : PWM_MAX_M1_LOOSEN;
+    else if (motorIdx == 1)
+        pwmMax = (action == ACTION_TIGHTEN) ? PWM_MAX_M2_TIGHTEN : PWM_MAX_M2_LOOSEN;
+
+    if (pwmMax < PWM_MIN) pwmMax = PWM_MIN;
+    if (pwmMax > PWM_MAX) pwmMax = PWM_MAX;
+    return pwmMax;
+}
 
 struct Motor
 {
@@ -301,6 +327,9 @@ const char *actionStr(MotorAction a)
 void startMotor(int motorIdx, MotorAction action)
 {
     Motor &m = motors[motorIdx];
+    int startPwm = startPwmForAction(motorIdx, action);
+    int pwmMax = maxPwmForAction(motorIdx, action);
+    if (startPwm > pwmMax) startPwm = pwmMax;
 
     // If this motor is stalled, reject the command
     if (m.state == STATE_STALLED)
@@ -348,7 +377,7 @@ void startMotor(int motorIdx, MotorAction action)
     m.motorRpm = 0.0;
 
     // Start PWM at dead-band edge — ramp brings it up
-    setMotorPWM(m, PWM_MIN);
+    setMotorPWM(m, startPwm);
 
     m.state = STATE_RUNNING;
     m.action = action;
@@ -356,7 +385,7 @@ void startMotor(int motorIdx, MotorAction action)
 
     Serial.printf("[M%d] %s \u2014 starting at PWM %d%%, limit %d mA (Kp=%.2f Ki=%.3f)\n",
                   motorIdx + 1, actionStr(action),
-                  (int)(PWM_MIN * 100 / 255), (int)currentLimitMa,
+                  (int)(startPwm * 100 / 255), (int)currentLimitMa,
                   kpCurrent, kiCurrent);
 }
 
@@ -393,6 +422,9 @@ void enterStalled(int motorIdx)
 void controlLoop(int motorIdx)
 {
     Motor &m = motors[motorIdx];
+    int startPwm = startPwmForAction(motorIdx, m.action);
+    int pwmMax = maxPwmForAction(motorIdx, m.action);
+    if (startPwm > pwmMax) startPwm = pwmMax;
     if (m.state != STATE_RUNNING)
         return;
 
@@ -451,12 +483,12 @@ void controlLoop(int motorIdx)
 
     // Never go below dead-band edge — motor would stop and fake a stall
     if (newPWM < PWM_MIN) newPWM = PWM_MIN;
-    if (newPWM > PWM_MAX) newPWM = PWM_MAX;
+    if (newPWM > pwmMax) newPWM = pwmMax;
 
     // Soft-start ramp ceiling — linearly increase max allowed PWM
     unsigned long elapsed = now - m.runStartTime;
     if (elapsed < rampDurationMs) {
-        int rampCeiling = PWM_MIN + (int)((long)(PWM_MAX - PWM_MIN) * elapsed / rampDurationMs);
+        int rampCeiling = startPwm + (int)((long)(pwmMax - startPwm) * elapsed / rampDurationMs);
         if (newPWM > rampCeiling) newPWM = rampCeiling;
     }
 
