@@ -76,7 +76,7 @@ The ESP32-S3 uses its **native USB peripheral** for Serial (no separate UART chi
 | PWM input | 0–5 V range; 3.3 V → full speed; GND → stop; dead band ~1.2 V |
 | CAP output voltage | ~5.2 V peak → **needs voltage divider** to 3.3 V for ESP32 |
 | Available gearbox ratios | 6.25, 10, 18.8, 30, 56, 70, 90, 131, 169, 210, 270, 394, 506, 630, 810 |
-| Testing ratios | 4 ratios TBD |
+| Selected ratios | M1 (gripper) = 1:56, M2 (tightening) = 1:90 |
 
 ### No-load current by gearbox ratio (bench power supply)
 
@@ -185,5 +185,27 @@ The 0.96″ module uses the full 128×64 SSD1306 framebuffer. No cursor offset i
 | Rail | Source | Consumers |
 |---|---|---|
 | 24 V | UR5e tool flange | BLDC motors, INA240 sense resistor |
-| 3.3 V | Buck converter (24 V → 3.3 V, part TBD) | MCU, RS-485, OLED, INA240 supply, buttons |
-| 5 V | Possibly not needed | To be confirmed during testing |
+| 3.3 V | Onboard buck converter (24 V → 3.3 V, see below) | MCU, RS-485, OLED, INA240 supply, buttons, camera-power XH 2.5 connector |
+| 5 V | Not used | — |
+
+### 3.3 V buck converter (soldered to PCB)
+
+| Parameter | Value |
+|---|---|
+| Supplier | 晒邦电源 (Shaibang Power) |
+| Reference photo | [`docs/Buck3.3Converter.jpg`](Buck3.3Converter.jpg) |
+| Input voltage | 4.5 V – 60 V (24 V flange rail is well within range) |
+| Output voltage | 3.3 V (fixed) |
+| Output current | 5 A max |
+| Module size | 43 × 20.5 × 7.8 mm |
+| Module weight | 10 g |
+
+Datasheet is supplier-provided in Chinese only; the parameters above
+are the only ones needed for re-sourcing a replacement.
+
+### Camera 3.3 V output (XH 2.5 connector)
+
+The PCB exposes a 2-pin XH 2.5 connector that taps the 3.3 V rail to
+power a future stand-alone camera board. **No data lines are routed to
+this connector.** The camera will live in a separate, not-yet-created
+repository and communicate independently of this controller.

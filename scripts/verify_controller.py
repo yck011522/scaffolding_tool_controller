@@ -44,17 +44,40 @@ import re
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 
 import serial
 
-# ─────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
 # EDIT THESE if the COM-port assignments change. Override on the CLI
 # with --usb-port / --rs485-port to skip editing this file.
-# ─────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
 DEFAULT_USB_PORT   = "COM22"   # ESP32-S3 USB-CDC (debug + protocol)
 DEFAULT_RS485_PORT = "COM7"    # USB ↔ RS-485 adapter to MAX3485
 DEFAULT_BAUD       = 115200
-# ─────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+
+class Tee:
+    """Mirror writes to stdout and to a results file."""
+    def __init__(self, path: Path):
+        self.terminal = sys.stdout
+        self.file = open(path, "w", encoding="utf-8", newline="\n")
+    def write(self, data: str) -> int:
+        self.terminal.write(data)
+        self.file.write(data)
+        return len(data)
+    def flush(self) -> None:
+        self.terminal.flush()
+        self.file.flush()
+    def close(self) -> None:
+        try:
+            self.file.close()
+        except Exception:
+            pass
 
 RESPONSE_TIMEOUT_S    = 1.5     # max wait for one OK/ERR line
 MOTOR_RUN_TIME_S      = 2.0     # how long to let a motor spin per test
@@ -506,12 +529,48 @@ def main() -> int:
                     help="Skip motor TIGHTEN/LOOSEN tests (config tests only)")
     ap.add_argument("--no-restore", action="store_true",
                     help="Skip restoring the original config (leave defaults)")
+    ap.add_argument("--no-results-file", action="store_true",
+                    help="Don't write results_YYYY-MM-DD.md alongside this script")
+    ap.add_argument("--results-file", default=None,
+                    help="Override the results-file path (default: "
+                         "scripts/results_YYYY-MM-DD.md)")
     args = ap.parse_args()
 
     if args.skip_usb and args.skip_rs485:
         print("[FAIL] Both transports skipped — nothing to do.", file=sys.stderr)
         return 2
 
+    # Tee stdout to a date-stamped results file unless suppressed.
+    tee: Tee | None = None
+    if not args.no_results_file:
+        results_path = (Path(args.results_file)
+                        if args.results_file
+                        else SCRIPT_DIR / f"results_{datetime.now():%Y-%m-%d}.md")
+        tee = Tee(results_path)
+        sys.stdout = tee  # type: ignore[assignment]
+        print("# verify_controller results")
+        print()
+        print(f"- Run started: {datetime.now().isoformat(timespec='seconds')}")
+        print(f"- USB port:   `{args.usb_port}`")
+        print(f"- RS-485 port: `{args.rs485_port}`")
+        print(f"- Baud:        {args.baud}")
+        print(f"- Skip USB / RS-485 / motor: "
+              f"{args.skip_usb} / {args.skip_rs485} / {args.skip_motor}")
+        print(f"- Restore original config: {not args.no_restore}")
+        print()
+        print("```text")
+
+    try:
+        return _run(args)
+    finally:
+        if tee is not None:
+            print("```")
+            sys.stdout = tee.terminal  # type: ignore[assignment]
+            tee.close()
+            print(f"\n[INFO] Results written to {results_path}")
+
+
+def _run(args) -> int:
     suites: list[Suite] = []
 
     # ── USB pass ──────────────────────────────────────────────────

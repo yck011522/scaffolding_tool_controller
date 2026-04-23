@@ -11,10 +11,10 @@ The controller sits at the UR5e tool flange and manages the following:
 | **ROS Communication** | MAX3485 RS-485 transceiver | UART (TX/RX via Grove connector) | Bidirectional link to the UR5e tool flange RS-485 bus; previously validated with echo-back test on ESP32-U |
 | **Motor Drive** | 2× BLDC motors with integrated drivers | PWM output (one pin per motor) | 24 V motors; PWM controls power output; only one motor active at a time |
 | **Motor Feedback** | Hall-effect / sensorless feedback from BLDC drivers | Digital input (interrupt) | 6 pulses per revolution; used for speed estimation and stall detection |
-| **Current Sensing** | INA219 (or INA240) on shared 24 V rail | I2C (INA219) or analog (INA240) | Single sensor monitors total 24 V intake for both motors; current budget ~1–2 A at 24 V |
+| **Current Sensing** | INA240A1 on shared 24 V rail | Analog (ADC, GPIO13) | Single sensor monitors total 24 V intake for both motors; usable range ~0–800 mA after bidirectional offset |
 | **Manual Override** | 4× momentary push buttons | GPIO digital input | Two per motor (tighten / loosen); active while held; overrides upper-level commands |
 | **Status Display** | 0.96″ SSD1306 OLED (128×64) | I2C (SDA/SCL via Grove connector) | Shows current state and information to the operator; 3.3 V compatible |
-| **Camera** | *(separate module — see `scaffolding_camera_controller` repo)* | — | Standalone XIAO ESP32-S3 Sense with always-on MJPEG streaming; independent housing and power |
+| **Camera 3.3 V output** | XH 2.5 connector on PCB | Power only — no data | Provides regulated 3.3 V to a future stand-alone camera board (separate repo, not yet developed). No logical connection to the controller. |
 
 ## Power Architecture
 
@@ -31,38 +31,104 @@ The controller sits at the UR5e tool flange and manages the following:
 3. **Single current sensor** — because only one motor operates at a time, one INA219/INA240 on the shared 24 V rail is sufficient to monitor total current draw.
 4. **Stall detection** — a motor is considered stalled when the interval between consecutive feedback pulses exceeds a configurable timeout, indicating the motor can no longer rotate under load.
 5. **Current limiting** — if measured current approaches the trip threshold, the controller automatically reduces PWM duty cycle. The trip threshold may be set by the upper-level controller per command.
-6. **Separate camera module** — camera is a standalone XIAO ESP32-S3 Sense in its own housing (see `scaffolding_camera_controller` repo). Always-on MJPEG streaming, no control interface needed.
+6. **Separate camera module** — the camera is intended to be a
+   stand-alone board in a future repository. The current PCB only
+   exposes a 3.3 V XH 2.5 power connector for it; there is no data or
+   logic link between the camera and this controller.
 7. **Separate UART for RS-485** — the RS-485 transceiver uses a hardware UART separate from the USB-C port so both can coexist.
 
 ## Repository Structure
 
 ```
 ├── README.md                   # This file
-├── platformio.ini              # PlatformIO build configuration
+├── platformio.ini              # PlatformIO build configuration (one env per test + esp32s3 main)
+├── boards/
+│   └── esp32-s3-tiny.json      # Custom board definition
 ├── docs/
 │   ├── testing_plan.md         # Test sequence, results, and progress tracker
-│   ├── hardware_specs.md       # Component specifications and voltage levels
-│   └── protocol.md             # RS-485 communication protocol definition
-├── src/
-│   └── main.cpp                # Integrated firmware (final)
-├── test/
-│   ├── test_rs485/             # RS-485 echo / loopback test
-│   ├── test_bldc_pwm/          # BLDC motor PWM drive test
-│   ├── test_bldc_feedback/     # BLDC motor feedback (pulse counting) test
-│   ├── test_ina_current/       # INA219/INA240 current sensor test
-│   ├── test_oled/              # SSD1306 OLED display test
-│   └── test_buttons/           # Push button input test
-└── scripts/                    # Helper scripts (e.g., ROS-side test nodes)
+│   ├── hardware_specs.md       # Component specifications, pin map, voltage levels
+│   ├── protocol.md             # USB / RS-485 command protocol (canonical reference)
+│   └── motor_spec/             # JGB37 datasheet CSV + wiring notes
+├── src/                        # Integrated firmware (env: esp32s3)
+│   ├── main.cpp                # setup() / loop() wiring
+│   ├── motor_control.{h,cpp}   # cfg[], PI loop, state machine, factory defaults
+│   ├── motor_config.h          # MotorConfig struct
+│   ├── buttons.{h,cpp}         # Debounced GPIO1–4
+│   ├── display.{h,cpp}         # SSD1306 OLED rendering
+│   ├── config_store.{h,cpp}    # NVS persistence (Preferences)
+│   ├── protocol.{h,cpp}        # Shared command parser (USB + RS-485)
+│   └── transport.{h,cpp}       # USB-CDC and RS-485 line readers
+├── test/                       # Each subfolder is a standalone PlatformIO env
+│   ├── test_rs485/             # MAX3485 echo / loopback (env: test_rs485)
+│   ├── test_bldc_pwm/          # PWM drive + direction (env: test_bldc_pwm)
+│   ├── test_bldc_feedback/     # CAP pulse counting / RPM (env: test_bldc_feedback)
+│   ├── test_ina_current/       # INA240 current sensing (env: test_ina_current)
+│   ├── test_oled/              # SSD1306 (env: test_oled)
+│   ├── test_buttons/           # GPIO buttons (env: test_buttons)
+│   ├── test_motor_control/     # First integration sketch (superseded by src/)
+│   └── test_motor_control_cleaned/  # Refactored integration sketch (superseded by src/)
+└── scripts/                    # Python bench / verification helpers
+    ├── verify_controller.py    # End-to-end USB + RS-485 protocol suite (snapshot/reset/test/restore)
+    ├── factory_reset_config.py # Sends RESET CONFIG and dumps GET CONFIG readback
+    ├── tune_current_control.py # Interactive PI / current-limit tuning
+    ├── verify_oled.py          # OLED bring-up
+    └── verify_motor_control_cleaned.py  # Legacy parser smoke test (superseded)
 ```
 
-## Open Items
+## Status
 
-- [ ] BLDC driver I/O voltage levels (3.3 V PWM input accepted? Feedback output level?)
-- [ ] INA219 vs INA240 selection (depends on voltage-level and interface preference)
-- [ ] Motor feedback pin assignment (potential GPIO sharing conflict on Grove connectors)
-- [ ] MAX3485 DE/RE direction-control pin assignment
-- [ ] Buck converter part selection (24 V → 3.3 V)
-- [ ] RS-485 communication protocol format (ASCII vs binary, message framing)
-- [ ] Whether 5 V rail is needed at all — if not, single 24 V → 3.3 V buck converter suffices
-- [ ] Microcontroller pin assignment because we have more devices than available pins. 
-- [ ] Four Buttons on resistor DAC encoded logic, allows multiple button presses.
+All subsystem tests have passed on the Waveshare ESP32-S3-Tiny, and the
+integrated firmware in `src/` (USB + RS-485 protocol, NVS-persisted
+config, OLED, buttons, PI current loop) is verified end-to-end by
+`scripts/verify_controller.py` (148 / 148 checks). Stall detection has
+also been confirmed manually by jamming the gearbox under load. See
+[docs/testing_plan.md](docs/testing_plan.md) for the per-subsystem log.
+
+## Next Steps (UR5e bring-up)
+
+The firmware is feature-complete on the bench. Before declaring the
+device production-ready, the following on-arm tests still need to be
+performed once the tool is mounted on the UR5e flange:
+
+1. **Flange-power smoke test.** Mount the controller, power it from the
+   24 V flange rail only (no bench PSU, no USB-C), confirm the OLED
+   boots, and exchange `PING` / `VERSION` with the ROS node over
+   RS-485.
+2. **Direction check (no load).** `TIGHTEN M1` / `STOP` / `LOOSEN M1` /
+   `STOP`, then the same for M2. Confirm direction matches the
+   mechanical drawing for both gripper (M1) and tightener (M2).
+3. **Loaded motion.** Clamp a real scaffolding joint and run
+   `TIGHTEN M2` until the PI current loop hits the configured limit;
+   confirm `STATUS` reports the expected current/PWM and that the
+   motor stops within the ramp time.
+4. **Stall recovery on the robot.** Re-confirm the bench-tested stall
+   path under real load (`ERR 2 STALLED` after a jam, `STOP` to clear,
+   then re-issue the command).
+5. **Power-cycle persistence.** `SET LIMIT M1 T 400`, power-cycle from
+   the flange, then `GET LIMIT M1 T` — must return `400`.
+6. **Soak test.** ~10 min of alternating tighten/loosen on a real
+   joint; check motor temperature, OLED legibility, no resets, no
+   INA240 baseline drift.
+
+The `scripts/verify_controller.py` end-to-end run already covers items
+1, 2, and 5 over the bench harness, but they are repeated on the robot
+because flange power, cable length, and EMI environment all differ.
+
+## Reflashing in the Field
+
+The USB-C port on the controller is exposed and can be used to
+reflash firmware after deployment. Two cautions:
+
+- **Use this repository's `platformio.ini`.** It sets
+  `monitor_dtr = 0` and `monitor_rts = 0` for the `esp32s3` env, which
+  prevents the ESP32-S3 USB-CDC bootloader from being accidentally
+  re-entered by a serial monitor that toggles DTR/RTS on disconnect
+  (this otherwise soft-bricks the device until the physical reset
+  button is pressed; full failure mode in
+  [docs/hardware_specs.md](docs/hardware_specs.md)).
+- **Any third-party tool used to talk to the USB port must open the
+  port with `dsrdtr=False, rtscts=False`.** This is already the
+  default in `pyserial` and in every script under `scripts/`.
+
+Under normal robotic operation the device is driven only over RS-485,
+which has no DTR/RTS line and therefore cannot trigger this failure.

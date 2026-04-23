@@ -16,6 +16,20 @@ static const int PWM_FREQ = 20000;       // 20 kHz
 static const int PWM_RESOLUTION = 8;     // 0–255
 
 // ── INA240 current sensor ──────────────────────────────────────────
+// INA240A1 is bidirectional with a VCC/2 reference, so half the ADC
+// range is wasted on the negative side. Usable single-sided current
+// range with the parameters below is roughly 0..750 mA before the
+// amplifier output saturates against the ADC rail (observed ceiling
+// ~800 mA). DO NOT raise per-motor LIMIT setpoints above ~750 mA
+// without first either:
+//   - shifting the INA240 REF pin to use more of the positive swing,
+//   - or replacing the 100 mΩ shunt with a smaller value (50 mΩ
+//     doubles the range to ~1.5 A but halves resolution).
+// See docs/hardware_specs.md ("Current Sensor — INA240A1") for the
+// derivation. The protocol SET LIMIT range still allows up to 1500 mA
+// so a future hardware revision doesn't require a firmware change,
+// but with the current shunt anything > ~750 mA will run open-loop
+// because the measurement saturates.
 const int PIN_INA_OUT = 13;
 static const float INA_GAIN = 20.0;
 static const float SHUNT_OHM = 0.1;      // 100 mΩ

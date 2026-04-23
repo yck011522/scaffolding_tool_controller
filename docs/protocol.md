@@ -149,7 +149,6 @@ Persistence control:
 | 3    | Invalid parameter (out of range, wrong type, missing)  |
 | 4    | Motor index invalid (must be `M1` or `M2`)             |
 | 5    | Action token invalid (must be `T` or `L`)              |
-| 6    | Persistent storage error                               |
 
 ## Typical Exchange Sequences
 
@@ -218,86 +217,7 @@ identical on USB and RS-485.
   without the suffix during transition.
 - **Binary mode.** If ASCII parsing latency matters (unlikely at <10 Hz
   command rate), define a compact binary framing with the same semantics.
-# Communication Protocol
 
-RS-485 serial protocol between the upper-level controller (ROS node on UR5e)
-and the scaffolding tool microcontroller.
-
-## Design Principles
-
-- **Master–slave.** The robot side (ROS node) initiates every exchange.
-  The tool controller never sends unsolicited data.
-- **Addressomg.** No specificc addressing as there will be 
-  only one device shall occupy each RS485 interface.
-- **Request → response.** Every command gets exactly one response line.
-  The robot can parse it immediately without buffering or timeouts.
-- **ASCII framing.** Human-readable for debugging, simple to parse in
-  both Python (ROS) and C++ (firmware). One command per line, `\n`
-  terminated.
-- **No streaming.** High-frequency logging (LOG, FAST) is USB-only for
-  bench tuning. The RS-485 bus stays quiet between exchanges.
-
-## Transport
-
-| Parameter | Value |
-|---|---|
-| Physical | RS-485 half-duplex (MAX3485) |
-| Baud rate | 115200 |
-| Data format | 8N1 |
-| Line terminator | Line Feed (LF) `\n` (0x0A) |
-| Max command length | 64 bytes |
-| Max response length | 128 bytes |
-| Response timeout | 100 ms (robot side should retry or fault after this) |
-
-## Message Format
-
-**Command (robot → tool):**
-```
-<VERB> [<args...>]\n
-```
-
-**Response (tool → robot):**
-```
-OK [<data...>]\n        — success
-ERR <code> <message>\n   — failure
-```
-
-Every response begins with `OK` or `ERR` so the parser only needs to check
-the first token.
-
-## Command Reference
-
-### Motor Control
-
-| Command | Description | Response |
-|---|---|---|
-| `TIGHTEN M1` | Run motor 1, tighten | `OK TIGHTEN M1` |
-| `LOOSEN M1` | Run motor 1, loosen | `OK LOOSEN M1` |
-| `TIGHTEN M2` | Run motor 2, tighten | `OK TIGHTEN M2` |
-| `LOOSEN M2` | Run motor 2, loosen | `OK LOOSEN M2` |
-| `STOP` | Stop all motors, reset stall flag | `OK STOP` |
-
-Starting a motor while another is already running stops the first one
-automatically. Starting a stalled motor returns `ERR 2 M1 STALLED` — send
-`STOP` first to clear the stall flag.
-
-### Status Query
-
-| Command | Response |
-|---|---|
-| `STATUS` | `OK <M1_state> <M2_state> <current_mA> <active_pwm_pct>` |
-| `PING` | `OK PONG` |
-
-**STATUS fields:**
-
-| Field | Type | Values |
-|---|---|---|
-| M1_state | string | `IDLE`, `TIGHTENING`, `LOOSENING`, `STALLED` |
-| M2_state | string | `IDLE`, `TIGHTENING`, `LOOSENING`, `STALLED` |
-| current_mA | integer | 0–825 (sensor ceiling) |
-| active_pwm_pct | integer | 0–100 |
-
-Example: 
 
 ### Configuration
 
